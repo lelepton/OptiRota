@@ -1,0 +1,6 @@
+# Dependências externas do projeto
+networkx>=3.0
+matplotlib>=3.7
+
+
+
