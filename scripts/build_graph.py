@@ -4,7 +4,7 @@ import networkx as nx
 from osmgraph.graph_builder import build_graph_in_memory
 
 if __name__ == "__main__":
-    osm_file = Path("../data/exemplo.osm")
+    osm_file = Path("../data/map.osm")
     G = build_graph_in_memory(osm_file)
 
     print(f"Nós: {G.number_of_nodes()}, Arestas: {G.number_of_edges()}")
