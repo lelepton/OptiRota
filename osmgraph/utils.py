@@ -8,8 +8,14 @@ def compute_haversine_meters(lat1: float, lon1: float, lat2: float, lon2: float)
     phi2 = math.radians(lat2)
     dphi = phi2 - phi1
     dlmb = math.radians(lon2 - lon1)
-    a = (math.sin(dphi / 2) * 2) + (math.cos(phi1) * math.cos(phi2) * (math.sin(dlmb / 2) * 2))
+    
+    a = (math.sin(dphi / 2) ** 2
+         + math.cos(phi1) * math.cos(phi2) * math.sin(dlmb / 2) ** 2)
+    
+    a = min(1.0, max(0.0, a))
+
     return 2.0 * EARTH_RADIUS_M * math.asin(math.sqrt(a))
+
 
 def dedupe_consecutive(ids_iter: Iterable[int]) -> List[int]:
     result: List[int] = []
@@ -18,4 +24,4 @@ def dedupe_consecutive(ids_iter: Iterable[int]) -> List[int]:
         if nid != last:
             result.append(nid)
             last = nid
-    return result 
+    return result

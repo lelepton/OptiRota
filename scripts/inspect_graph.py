@@ -2,7 +2,7 @@ from pathlib import Path
 from osmgraph.graph_builder import build_graph_in_memory
 
 if __name__ == "__main__":
-    osm_file = Path("../data/map.osm")
+    osm_file = Path(__file__).resolve().parent.parent / "data" / "map.osm"
 
     G = build_graph_in_memory(osm_file)
 
