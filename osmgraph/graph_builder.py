@@ -6,11 +6,6 @@ from .parser_xml import parse_nodes, iter_ways, is_relevant_way
 from .utils import compute_haversine_meters, dedupe_consecutive
 
 def build_graph_in_memory(osm_path: Path) -> nx.DiGraph:
-    """
-    Cria um grafo dirigido em memória a partir de um arquivo OSM.
-    Nodes: osmid, latitude, longitude
-    Edges: u, v, d (distância), name, highway
-    """
     G: nx.DiGraph = nx.DiGraph()
     nodes: Dict[int, Tuple[float, float]] = parse_nodes(osm_path)
 
