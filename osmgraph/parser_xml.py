@@ -1,18 +1,29 @@
+
 from pathlib import Path
 from typing import Dict, List, Tuple, Iterable
 import xml.etree.ElementTree as ET
 
-from .utils import dedupe_consecutive
+DRIVE_HIGHWAYS = {
+    "motorway", "trunk", "primary", "secondary", "tertiary",
+    "unclassified", "residential", "living_street", "service",
+    "motorway_link", "trunk_link", "primary_link", "secondary_link", "tertiary_link",
+}
+PEDESTRIAN_SET = {"pedestrian", "footway", "steps"}
+CYCLE_SET = {"cycleway"}
 
 def parse_nodes(osm_path: Path) -> Dict[int, Tuple[float, float]]:
     nodes: Dict[int, Tuple[float, float]] = {}
     for _, elem in ET.iterparse(str(osm_path), events=("end",)):
         if elem.tag == "node":
-            osmid = int(elem.attrib["id"])
-            lat = float(elem.attrib["lat"])
-            lon = float(elem.attrib["lon"])
-            nodes[osmid] = (lat, lon)
-            elem.clear()
+            try:
+                osmid = int(elem.attrib["id"])
+                lat = float(elem.attrib["lat"])
+                lon = float(elem.attrib["lon"])
+                nodes[osmid] = (lat, lon)
+            except (KeyError, ValueError):
+                continue
+            finally:
+                elem.clear()
     return nodes
 
 def iter_ways(osm_path: Path) -> Iterable[Tuple[List[int], Dict[str, str]]]:
@@ -23,14 +34,6 @@ def iter_ways(osm_path: Path) -> Iterable[Tuple[List[int], Dict[str, str]]]:
             yield node_ids, tags
             elem.clear()
 
-DRIVE_HIGHWAYS = {
-    "motorway", "trunk", "primary", "secondary", "tertiary",
-    "unclassified", "residential", "living_street", "service",
-    "motorway_link", "trunk_link", "primary_link", "secondary_link", "tertiary_link",
-}
-PEDESTRIAN_SET = {"pedestrian", "footway", "steps"}
-CYCLE_SET = {"cycleway"}
-
 def is_relevant_way(tags: Dict[str, str]) -> bool:
     highway = tags.get("highway")
     if highway is None:
@@ -39,9 +42,9 @@ def is_relevant_way(tags: Dict[str, str]) -> bool:
         return False
     if highway == "construction":
         return False
-    if tags.get("access") == "private":
+    if tags.get("access") in {"private", "no"}:
         return False
-    if tags.get("vehicle") == "no":
+    if tags.get("vehicle") == "no" and tags.get("bicycle") == "no" and tags.get("foot") == "no":
         return False
     return (
         (highway in DRIVE_HIGHWAYS)
