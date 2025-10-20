@@ -19,6 +19,7 @@ import math
 import os
 import sys
 import json
+import re
 
 # -------------------------------------------------------------------------
 # Constantes: tipos de via por highway
@@ -90,7 +91,7 @@ def _normalize_tag(tag: str) -> str:
 # -------
 # float : velocidade em m/s
 def _speed_mps_for_tag(tag: str) -> float:
-    return SPEED_LIMITS_MPS.get(_normalize_tag(tag))
+    return SPEED_LIMITS_MPS.get(_normalize_tag(tag), 8.33) # Padrão para residential
 
 
 # -------------------------------------------------------------------------
@@ -109,7 +110,7 @@ def _speed_mps_for_tag(tag: str) -> float:
 # -------
 # float : coeficiente (adimensional)
 def _coef_for_tag(tag: str) -> float:
-    return COEF_BY_TAG.get(_normalize_tag(tag))
+    return COEF_BY_TAG.get(_normalize_tag(tag), 0.3) # Padrão para residential
 
 
 # -------------------------------------------------------------------------
@@ -397,6 +398,10 @@ class RoadGraph:
             for edge in edges:
                 if _is_edge_allowed(travel_mode, edge):
                     candidate_node_ids.update([source_id, edge.v])
+        
+        if not candidate_node_ids:
+             # Fallback: se nenhum nó for roteável, procura em todos os nós
+             candidate_node_ids = set(self.nodes.keys())
 
         # Busca linear por Haversine
         best_node_id, best_distance_m = -1, float("inf")
@@ -726,7 +731,8 @@ def print_path_edges(path_edges, source_node_id: int, label_total: str) -> None:
         edge_time_s = edge.w / _speed_mps_for_tag(edge.tag)
         cumulative_time_s += edge_time_s
         edge_time_fmt = _format_seconds_hms(edge_time_s)
-        print(f"{running_source} -> {edge.v} | w={edge.w:.3f} m | t≈{edge_time_fmt} | cumulativo={cumulative_distance:.3f} m | tag={edge.tag} | name=\"{edge.name}\"")
+        # CORREÇÃO: trocado \u2248 por ~ para evitar UnicodeEncodeError no Windows
+        print(f"{running_source} -> {edge.v} | w={edge.w:.3f} m | t~{edge_time_fmt} | cumulativo={cumulative_distance:.3f} m | tag={edge.tag} | name=\"{edge.name}\"")
         running_source = edge.v
     print(f"Distância total ({label_total}): {cumulative_distance:.3f} m")
     print(f"Tempo total estimado ({label_total}): {_format_seconds_hms(cumulative_time_s)} ({cumulative_time_s:.1f} s)")
@@ -921,62 +927,18 @@ def _fmt_seconds(rem: float) -> str:
 # -------------------------------------------------------------------------
 # Função: parse_vrp_input_file
 # -------------------------------------------------------------------------
-# Descrição
-# ---------
-# Lê um arquivo texto no formato:
-#   <depot_lat> <depot_lon> <capacity_tons>
-#
-#   <lat> <lon> "HH:MM-HH:MM, HH:MM-HH:MM" <weight_tons>
-#   ...
-# Retorna tupla com origem, capacidade e lista de entregas cruas.
-#
-# Parâmetros
-# ----------
-# file_path : str (caminho do arquivo)
-#
-# Retorno
-# -------
-# (float, float, float, list[list]) :
-#   (origin_lat, origin_lon, capacity_tons, deliveries_raw)
-#   onde deliveries_raw = [[lat, lon, weight_tons, windows_string], ...]
-#
-# Observações
-# -----------
-# - Não há validação/erros; assume-se arquivo bem formatado.
-# Substitua a função parse_vrp_input_file no optirota.py por esta versão corrigida
-
-# Substitua a função parse_vrp_input_file no optirota.py por esta versão
-
+# CORREÇÃO: Função simplificada para evitar erros de parsing.
 def parse_vrp_input_file(file_path: str) -> tuple[float, float, list[float], list[list]]:
-    """
-    Parser robusto para arquivo VRP.
-    
-    Formato esperado:
-      Linha 1: lat,lon,num_veiculos
-      Linha 2: capacidade_por_veiculo (valor único ou lista)
-      Linhas 3+: lat,lon,peso_toneladas,HH:MM-HH:MM[,HH:MM-HH:MM]
-    
-    Exemplo:
-      -9.660217,-35.718473,10
-      3
-      -9.658953,-35.706859,2,08:00-18:00
-      -9.662428,-35.700250,1.5,08:00-18:00
-    """
-    import re
-
     with open(file_path, "r", encoding="utf-8") as f:
         raw_lines = [ln.rstrip("\n") for ln in f]
 
-    # Remove vazias/puras de comentário
     lines = [ln.strip() for ln in raw_lines if ln.strip() and not ln.strip().startswith("#")]
 
     if len(lines) < 2:
         raise ValueError("Arquivo VRP precisa de ao menos 2 linhas (origem+veículos e capacidades).")
 
-    # ===== LINHA 1: Origem e número de veículos =====
-    line1_normalized = lines[0].replace(",", " ")
-    tokens1 = [t.strip() for t in line1_normalized.split() if t.strip()]
-    
+    # Linha 1: Origem e número de veículos
+    tokens1 = [t.strip() for t in lines[0].replace(",", " ").split() if t.strip()]
     if len(tokens1) < 3:
         raise ValueError(f"Linha 1 inválida: {lines[0]!r}. Esperado: <lat> <lon> <num_veiculos>")
     
@@ -985,172 +947,55 @@ def parse_vrp_input_file(file_path: str) -> tuple[float, float, list[float], lis
         origin_lon = float(tokens1[1])
         num_vehicles = int(tokens1[2])
     except (ValueError, IndexError) as e:
-        raise ValueError(f"Linha 1 inválida: {lines[0]!r}. Esperado: <lat> <lon> <num_veiculos>") from e
+        raise ValueError(f"Linha 1 inválida: {lines[0]!r}. Erro: {e}") from e
 
-    # ===== LINHA 2: Capacidades =====
-    # Pode ser um único valor (replicado para N veículos) ou lista de N valores
+    # Linha 2: Capacidades
     caps_tokens = re.split(r'[,\s]+', lines[1].strip())
     caps_tokens = [t for t in caps_tokens if t]
     
     try:
         if len(caps_tokens) == 1:
-            # Capacidade única: usar para todos os veículos
             cap_value = float(caps_tokens[0])
             capacities_tons = [cap_value] * num_vehicles
         else:
-            # Lista de capacidades
             capacities_tons = [float(t) for t in caps_tokens[:num_vehicles]]
             if len(capacities_tons) < num_vehicles:
-                # Preencher com o último valor se faltarem
                 last_cap = capacities_tons[-1] if capacities_tons else 3.0
                 capacities_tons.extend([last_cap] * (num_vehicles - len(capacities_tons)))
-    except ValueError as e:
-        raise ValueError(f"Linha 2 inválida: {lines[1]!r}. Esperado: capacidade(s) em toneladas") from e
+    except (ValueError, IndexError) as e:
+        raise ValueError(f"Linha 2 inválida: {lines[1]!r}. Erro: {e}") from e
 
-    # ===== LINHAS 3+: Entregas =====
+    # Linhas 3+: Entregas
     deliveries_raw: list[list] = []
     for idx, line in enumerate(lines[2:], start=3):
         try:
-            # Divide por vírgula
-            parts = [p.strip() for p in line.split(",")]
-            
+            # Divide a linha por vírgula e remove espaços extras
+            parts = [p.strip() for p in line.split(',') if p.strip()]
             if len(parts) < 4:
-                raise ValueError(f"Número insuficiente de campos (esperado >=4, recebido {len(parts)})")
+                # Tenta dividir por espaço como fallback
+                parts = [p.strip() for p in line.split() if p.strip()]
+                if len(parts) < 4:
+                    raise ValueError(f"Linha de entrega deve ter pelo menos 4 campos. Recebido: {len(parts)}")
             
-            # Sempre: lat, lon, peso, janela
             lat = float(parts[0])
             lon = float(parts[1])
-            peso = float(parts[2])
-            
-            # Janelas (pode ser 1 ou mais, separadas por vírgula)
-            # Junta tudo após o peso como string de janelas
-            windows_string = ",".join(parts[3:]).strip()
-            
+            weight = float(parts[2])
+            # Junta todas as partes restantes como a string de janelas
+            windows_string = ",".join(parts[3:]).strip().strip('"')
+
             if not windows_string:
-                raise ValueError("Janela de tempo vazia")
+                raise ValueError("Janela de tempo não encontrada ou vazia.")
             
-            deliveries_raw.append([lat, lon, peso, windows_string])
+            deliveries_raw.append([lat, lon, weight, windows_string])
             
-        except ValueError as exc:
+        except (ValueError, IndexError) as exc:
             raise ValueError(f"Linha {idx} inválida: {line!r} | erro: {exc}") from exc
 
     return origin_lat, origin_lon, capacities_tons, deliveries_raw
-# -------------------------------------------------------------------------
-# Função: VRP_heuristic
-# -------------------------------------------------------------------------
-# Descrição
-# ---------
-# Heurística gulosa para roteirização com janelas de tempo diárias e capacidade
-# com reset no depósito. O algoritmo simula “teletransporte”: a posição do
-# veículo salta diretamente para o ponto de atendimento e o relógio avança
-# apenas pelo tempo de viagem calculado.
-#
-# Regras de escolha
-# -----------------
-# 1) Entre as entregas atendíveis **agora** (sem espera), escolha a que tem
-#    menor horário de atendimento (empate: menor distância).
-# 2) Se não houver atendimento imediato, considere **voltar ao depósito**
-#    (somando o tempo de retorno) e planejar a partir de lá (aqui pode haver
-#    espera até a janela). Escolha a de menor horário de atendimento após o
-#    retorno (empate: menor distância).
-# 3) Se nada for possível HOJE (mesmo considerando o retorno), o caminhão
-#    retorna à base (somando o tempo), e avançamos para o próximo dia (DIA N+1),
-#    reiniciando o relógio em start_time_HH_MM e resetando a capacidade.
-#
-# Observações
-# -----------
-# - A capacidade NÃO entra no ranking; só impede “atendimento imediato” se não
-#   couber. Após retorno ao depósito, a capacidade é resetada.
-# - Assume-se que **não existem entregas que comecem em um dia e terminem em outro**.
-#
-# Parâmetros
-# ----------
-# graph            : RoadGraph
-# origin_lat       : float (latitude do depósito)
-# origin_lon       : float (longitude do depósito)
-# start_time_HH_MM : str   (horário de partida "HH:MM")
-# capacity_tons_L  : float (capacidade máxima do caminhão em toneladas)
-# deliveries_raw   : list  ([[lat, lon, weight_tons, windows_string], ...])
-# highway          : str   ('car' | 'bike' | 'foot')
-#
-# Retorno
-# -------
-# None (imprime o plano por "DIA N")
 
 # -------------------------------------------------------------------------
-# Função: VRP_heuristic
+# Função: VRP_heuristic (NOVA VERSÃO MULTI-STOP)
 # -------------------------------------------------------------------------
-# Descrição
-# ---------
-# Heurística gulosa com janelas diárias e **vários veículos**.
-# Mudança: antes de empurrar entrega para "DIA N+1", tentar alocar no
-# MESMO dia para outro veículo (imprimindo "DIA N, VEÍCULO M").
-#
-# Parâmetros
-# ----------
-# origin_lat       : float  (latitude do depósito)
-# origin_lon       : float  (longitude do depósito)
-# start_time_HH_MM : str    (horário de partida "HH:MM")
-# capacities_tons_L: list   (capacidade de cada veículo, em toneladas)
-# deliveries_raw   : list   ([[lat, lon, weight_tons, windows_string], ...])
-# highway          : str    ('car' | 'bike' | 'foot')
-#
-# Retorno
-# -------
-# None (imprime o plano por "DIA N, VEÍCULO M")
-
-# -------------------------------------------------------------------------
-# Função: VRP_heuristic
-# -------------------------------------------------------------------------
-# Descrição
-# ---------
-# Heurística gulosa com janelas diárias e vários veículos.
-# Mudança: quando termina o bloco "DIA N, VEÍCULO M" (troca de veículo,
-# mudança de dia ou fim do plano), imprime imediatamente:
-#   Carga retorna a distribuidora.
-#
-# Parâmetros
-# ----------
-# origin_lat       : float
-# origin_lon       : float
-# start_time_HH_MM : str
-# capacities_tons_L: list[float]
-# deliveries_raw   : list[[lat, lon, weight_tons, windows_string]]
-# highway          : str
-#
-# Retorno
-# -------
-# None
-# -------------------------------------------------------------------------
-# Função: VRP_heuristic
-# -------------------------------------------------------------------------
-# Descrição
-# ---------
-# Heurística gulosa com janelas diárias e vários veículos.
-# Antes de empurrar entrega para “DIA N+1”, tenta alocar no MESMO dia
-# para outro veículo (imprimindo “DIA N, VEÍCULO M” quando o veículo
-# começa a operar no dia).
-#
-# Mudança de interface (RETORNO):
-# -------------------------------
-# Retorna uma lista: [(veiculo_id_1based, lista_de_arestas_percorridas), ...]
-# - veiculo_id_1based : int (1, 2, 3, ...)
-# - lista_de_arestas_percorridas : List[Edge] concatenando, na ordem,
-#   as arestas dos deslocamentos realizados por aquele veículo.
-#
-# Parâmetros
-# ----------
-# graph              : RoadGraph
-# origin_lat         : float  (latitude do depósito)
-# origin_lon         : float  (longitude do depósito)
-# start_time_HH_MM   : str    (horário de partida “HH:MM”)
-# capacities_tons_L  : list   (capacidade [t] de cada veículo)
-# deliveries_raw     : list   ([[lat, lon, weight_tons, windows_str], ...])
-# highway            : str    ('car' | 'bike' | 'foot')
-#
-# Retorno
-# -------
-# List[Tuple[int, List[Edge]]] : (veículo 1-based, arestas)
 def VRP_heuristic(
     graph: "RoadGraph",
     origin_lat: float,
@@ -1160,220 +1005,110 @@ def VRP_heuristic(
     deliveries_raw: list[list],
     highway: str = "car",
 ) -> list[tuple[int, list["Edge"]]]:
-    # 1) Construção das entregas
+    
     deliveries: list[Delivery] = [
-        Delivery.from_windows_string(idx, lat, lon, windows_string, weight_tons)
-        for idx, (lat, lon, weight_tons, windows_string) in enumerate(deliveries_raw)
+        Delivery.from_windows_string(idx, lat, lon, win_str, weight)
+        for idx, (lat, lon, weight, win_str) in enumerate(deliveries_raw)
     ]
-
-    # 2) Estado dos veículos
+    
     num_vehicles = len(capacities_tons_L)
-    vehicles = [{
-        "lat": float(origin_lat),
-        "lon": float(origin_lon),
-        "t": float(_time_to_seconds(start_time_HH_MM)),
-        "cap": float(capacities_tons_L[i]),
-        "cap_max": float(capacities_tons_L[i]),
-        "started": False,  # já imprimiu "DIA N, VEÍCULO M" no dia atual
-    } for i in range(num_vehicles)]
-
-    # 2.1) Acumulador das arestas percorridas por veículo
     vehicles_paths: list[list[Edge]] = [[] for _ in range(num_vehicles)]
-
+    
     current_day = 1
-    print(f"DIA {current_day}")
-    delivered_today = False
-    current_block_vi: int | None = None  # veículo cujo bloco está “aberto”
+    
+    while any(not d.delivery_was_completed for d in deliveries):
+        print(f"DIA {current_day}")
+        
+        # Estado dos veículos para o dia atual
+        vehicles = [{
+            "lat": origin_lat, "lon": origin_lon,
+            "t": float(_time_to_seconds(start_time_HH_MM)),
+            "cap": capacities_tons_L[i], "cap_max": capacities_tons_L[i],
+            "started_day": False, "tour_path": []
+        } for i in range(num_vehicles)]
+        
+        day_had_deliveries = False
 
-    # ---------------------------------------------------------------------
-    # Função interna: melhor candidato para UM veículo
-    # ---------------------------------------------------------------------
-    # Retorna um dict com:
-    #   - delivery
-    #   - distance_meters
-    #   - travel_time_seconds
-    #   - service_time_seconds
-    #   - edges              (se “direct”)
-    #   - edges_return       (se “via depósito”)
-    #   - edges_to_delivery  (se “via depósito”)
-    # e também o tipo: "direct" | "depot"
-    def best_candidate_for_vehicle(vstate: dict) -> tuple[Optional[dict], Optional[str]]:
-        cur_lat = vstate["lat"]; cur_lon = vstate["lon"]; cur_t = vstate["t"]; cur_cap = vstate["cap"]
+        for vi in range(num_vehicles):
+            v = vehicles[vi]
+            
+            while True: # Loop para construir um tour completo para o veículo vi
+                
+                # Encontrar a melhor PRÓXIMA entrega para ESTE veículo
+                candidates = []
+                for delivery in deliveries:
+                    if delivery.delivery_was_completed or delivery.delivery_weight_tons > v["cap"]:
+                        continue
 
-        direct_candidates: list[dict] = []
-        depot_candidates:  list[dict] = []
+                    # Calcular tempo de viagem da pos. atual do veículo até a entrega
+                    edges, dist, travel_time = graph.astar_with_time_between(
+                        v["lat"], v["lon"],
+                        delivery.delivery_latitude, delivery.delivery_longitude,
+                        highway
+                    )
+                    
+                    # Verificar se a entrega é possível hoje
+                    arrival_time = v["t"] + travel_time
+                    service_time = delivery.earliest_same_day_service_time(arrival_time)
+                    
+                    if service_time is not None:
+                        candidates.append({
+                            "delivery": delivery,
+                            "edges": edges,
+                            "service_time": service_time,
+                            "travel_time": travel_time
+                        })
+                
+                if not candidates:
+                    # Nenhuma entrega mais pode ser feita por este veículo nesta viagem
+                    if v["started_day"]:
+                         print("Carga retorna a distribuidora.")
+                    break # Fim do tour, passa para o próximo veículo
 
-        # Caminho de retorno atual->depósito (para calcular tempo de volta quando “via depósito”)
-        edges_back, _dist_back, ret_back_s = graph.astar_with_time_between(
-            cur_lat, cur_lon, origin_lat, origin_lon, highway
-        )
+                # Critério de seleção: menor tempo de chegada (serviço)
+                best_cand = min(candidates, key=lambda c: c["service_time"])
+                d = best_cand["delivery"]
+                
+                # Imprimir cabeçalho do veículo se for a primeira entrega do dia
+                if not v["started_day"]:
+                    print(f"DIA {current_day}, VEÍCULO {vi + 1}")
+                    v["started_day"] = True
+                    day_had_deliveries = True
 
-        for delivery in deliveries:
-            if delivery.delivery_was_completed:
-                continue
-
-            # A) Direto (sem voltar ao depósito)
-            if delivery.delivery_weight_tons <= cur_cap:
-                edges_a, dist_a, trav_a = graph.astar_with_time_between(
-                    cur_lat, cur_lon, delivery.delivery_latitude, delivery.delivery_longitude, highway
-                )
-                svc_a = delivery.earliest_same_day_service_time(cur_t + trav_a)
-                if svc_a is not None:
-                    direct_candidates.append({
-                        "delivery": delivery,
-                        "distance_meters": float(dist_a),
-                        "travel_time_seconds": float(trav_a),
-                        "service_time_seconds": float(svc_a),
-                        "edges": edges_a,
-                    })
-
-            # B) Via depósito (reset de capacidade)
-            edges_b, dist_b, trav_b = graph.astar_with_time_between(
-                origin_lat, origin_lon, delivery.delivery_latitude, delivery.delivery_longitude, highway
-            )
-            svc_b = delivery.earliest_same_day_service_time(cur_t + ret_back_s + trav_b)
-            if svc_b is not None and delivery.delivery_weight_tons <= vstate["cap_max"]:
-                depot_candidates.append({
-                    "delivery": delivery,
-                    "distance_meters": float(dist_b),
-                    "travel_time_seconds": float(trav_b),
-                    "service_time_seconds": float(svc_b),
-                    "edges_return": edges_back,
-                    "edges_to_delivery": edges_b,
-                })
-
-        def _rank(c: dict) -> tuple:
-            return (c["service_time_seconds"], c["distance_meters"], c["delivery"].delivery_identifier)
-
-        if direct_candidates:
-            direct_candidates.sort(key=_rank)
-            return direct_candidates[0], "direct"
-        if depot_candidates:
-            depot_candidates.sort(key=_rank)
-            return depot_candidates[0], "depot"
-        return None, None
-
-    # ---------------------------------------------------------------------
-    # Loop principal (dias)
-    # ---------------------------------------------------------------------
-    while True:
-        pending = [d for d in deliveries if not d.delivery_was_completed]
-        if not pending:
-            # Fechar bloco ativo (se houver), antes de encerrar
-            if current_block_vi is not None:
-                print("Carga retorna a distribuidora.")
-                current_block_vi = None
-            # Fim → retorna estrutura solicitada
-            return [(vi + 1, vehicles_paths[vi]) for vi in range(num_vehicles)]
-
-        # Melhor atendimento entre todos os veículos
-        best = None; best_vi = None; best_kind = None
-        for vi, v in enumerate(vehicles):
-            cand, kind = best_candidate_for_vehicle(v)
-            if cand is None:
-                continue
-            key = (cand["service_time_seconds"], cand["distance_meters"], cand["delivery"].delivery_identifier)
-            if best is None or key < (best["service_time_seconds"], best["distance_meters"], best["delivery"].delivery_identifier):
-                best, best_vi, best_kind = cand, vi, kind
-
-        if best is not None:
-            # Troca de bloco de veículo: fecha o anterior
-            if current_block_vi is None:
-                current_block_vi = best_vi
-            elif current_block_vi != best_vi:
-                print("Carga retorna a distribuidora.")
-                current_block_vi = best_vi
-
-            v = vehicles[best_vi]
-            d = best["delivery"]
-
-            # Cabeçalho do bloco do veículo no dia
-            if not v["started"]:
-                print(f"DIA {current_day}, VEÍCULO {best_vi + 1}")
-                v["started"] = True
-
-            # -------------------------------------------------------------
-            # Caso A: direto
-            # -------------------------------------------------------------
-            if best_kind == "direct":
-                mins, rem = _split_minutes_seconds_exact(best["travel_time_seconds"])
+                # Imprimir log de deslocamento
+                mins, rem = _split_minutes_seconds_exact(best_cand["travel_time"])
                 print(
                     f"Carga sai ({v['lat']:.6f}, {v['lon']:.6f}) {_seconds_to_hhmmss(v['t'])} "
                     f"em direção a ({d.delivery_latitude:.6f}, {d.delivery_longitude:.6f}) "
                     f"e chegará em {mins} minutos {_fmt_seconds(rem)} segundos "
-                    f"às {_seconds_to_hhmmss(best['service_time_seconds'])} horas."
+                    f"às {_seconds_to_hhmmss(best_cand['service_time'])} horas."
                 )
-                # Acumula arestas do deslocamento direto
-                vehicles_paths[best_vi].extend(best.get("edges", []))
 
-                v["t"] = float(best["service_time_seconds"])
+                # Atualizar estado do veículo
+                v["t"] = best_cand["service_time"]
                 v["lat"], v["lon"] = d.delivery_latitude, d.delivery_longitude
                 v["cap"] -= d.delivery_weight_tons
+                vehicles_paths[vi].extend(best_cand["edges"])
+                
+                # Marcar entrega como concluída
                 d.delivery_was_completed = True
-                delivered_today = True
-                continue
 
-            # -------------------------------------------------------------
-            # Caso B: via depósito (reset capacidade)
-            # -------------------------------------------------------------
-            # Acumula arestas: retorno e ida ao cliente
-            vehicles_paths[best_vi].extend(best.get("edges_return", []))
-            mins, rem = _split_minutes_seconds_exact(best["travel_time_seconds"])
-            print(
-                f"Carga sai da distribuidora {_seconds_to_hhmmss(v['t'])} "
-                f"em direção a ({d.delivery_latitude:.6f}, {d.delivery_longitude:.6f}) "
-                f"e chegará em {mins} minutos {_fmt_seconds(rem)} segundos "
-                f"às {_seconds_to_hhmmss(best['service_time_seconds'])} horas."
-            )
-            vehicles_paths[best_vi].extend(best.get("edges_to_delivery", []))
+        if not day_had_deliveries and any(not d.delivery_was_completed for d in deliveries):
+             print("Nenhuma entrega pôde ser realizada hoje. Verificando inviabilidade...")
+             # Lógica para verificar se alguma entrega restante é impossível
+             possible_in_future = False
+             for d in deliveries:
+                 if not d.delivery_was_completed:
+                     if any(d.delivery_weight_tons <= cap for cap in capacities_tons_L):
+                         possible_in_future = True
+                         break
+             if not possible_in_future:
+                 print("Entregas restantes são inviáveis por capacidade. Encerrando.")
+                 break
 
-            v["t"] = float(best["service_time_seconds"])
-            v["lat"], v["lon"] = d.delivery_latitude, d.delivery_longitude
-            v["cap"] -= d.delivery_weight_tons
-            # reset de cap já é implícito ao voltar no cálculo; aqui seguimos a lógica original:
-            # (se desejar “zerar” explicitamente na volta, mover esse reset para o ponto de retorno)
-            d.delivery_was_completed = True
-            delivered_today = True
-            continue
-
-        # Nenhum veículo atende algo hoje → checa inviabilidade e vira o dia
-        if not delivered_today:
-            possible_next_day = False
-            day_start_seconds = float(_time_to_seconds(start_time_HH_MM))
-            max_caps = [vv["cap_max"] for vv in vehicles] or [0.0]
-            for dcheck in [d for d in deliveries if not d.delivery_was_completed]:
-                if dcheck.delivery_weight_tons > max(max_caps):
-                    print(f"Entrega {dcheck.delivery_identifier} inviável: peso maior que a capacidade de qualquer veículo.")
-                    dcheck.delivery_was_completed = True
-                    continue
-                _eX, _dX, travX = graph.astar_with_time_between(
-                    origin_lat, origin_lon, dcheck.delivery_latitude, dcheck.delivery_longitude, highway
-                )
-                svcX = dcheck.earliest_same_day_service_time(day_start_seconds + travX)
-                if svcX is not None:
-                    possible_next_day = True
-                    break
-            if not possible_next_day:
-                if current_block_vi is not None:
-                    print("Carga retorna a distribuidora.")
-                    current_block_vi = None
-                print("Nenhuma entrega restante é atendível em dias futuros (por capacidade/janelas/alcance). Encerrando.")
-                return [(vi + 1, vehicles_paths[vi]) for vi in range(num_vehicles)]
-
-        # Fechar bloco ativo antes de virar o dia
-        if current_block_vi is not None:
-            print("Carga retorna a distribuidora.")
-            current_block_vi = None
-
-        # Novo dia: reseta posição/tempo/capacidade de todos
         current_day += 1
-        print(f"DIA {current_day}")
-        delivered_today = False
-        for v in vehicles:
-            v["lat"], v["lon"] = float(origin_lat), float(origin_lon)
-            v["t"] = float(_time_to_seconds(start_time_HH_MM))
-            v["cap"] = float(v["cap_max"])
-            v["started"] = False
+
+    return [(vi + 1, path) for vi, path in enumerate(vehicles_paths)]
 
 
 # -------------------------------------------------------------------------
@@ -1475,6 +1210,13 @@ def cli_dijkstra(nodes_csv: str, edges_csv: str,
     graph = RoadGraph.load_graph(nodes_csv, edges_csv)
     source_node_id = graph.nearest_node(lat1, lon1, highway)
     path_edges, total_distance_m = graph.shortest_path_between(lat1, lon1, lat2, lon2, highway)
+    
+    # Salvar resultado em JSON para o visualizador
+    from pathlib import Path
+    output_dir = Path(nodes_csv).parent
+    path_route_json = output_dir / "path_route.json"
+    save_single_path_to_json([(1, path_edges)], graph, str(path_route_json), source_node_id)
+    
     if not path_edges:
         print("[]")
         return
@@ -1506,6 +1248,13 @@ def cli_astar(nodes_csv: str, edges_csv: str,
     graph = RoadGraph.load_graph(nodes_csv, edges_csv)
     source_node_id = graph.nearest_node(lat1, lon1, highway)
     path_edges, total_distance_m, total_time_s = graph.astar_shortest_path_between(lat1, lon1, lat2, lon2, highway)
+
+    # Salvar resultado em JSON para o visualizador
+    from pathlib import Path
+    output_dir = Path(nodes_csv).parent
+    path_route_json = output_dir / "path_route.json"
+    save_single_path_to_json([(1, path_edges)], graph, str(path_route_json), source_node_id)
+
     if not path_edges:
         print("[]")
         return
@@ -1538,83 +1287,60 @@ def cli_astar_time(nodes_csv: str, edges_csv: str,
     graph = RoadGraph.load_graph(nodes_csv, edges_csv)
     source_node_id = graph.nearest_node(lat1, lon1, highway)
     path_edges, total_distance_m, total_time_s = graph.astar_with_time_between(lat1, lon1, lat2, lon2, highway)
+    
+    # Salvar resultado em JSON para o visualizador
+    from pathlib import Path
+    output_dir = Path(nodes_csv).parent
+    path_route_json = output_dir / "path_route.json"
+    save_single_path_to_json([(1, path_edges)], graph, str(path_route_json), source_node_id)
+
     if not path_edges:
         print("[]")
         return
     print_path_edges(path_edges, source_node_id, "A* (com tempo)")
 
 # -------------------------------------------------------------------------
-# Função: save_routes_to_json
+# Função: save_routes_to_json (Genérica para VRP e Pathfinding)
 # -------------------------------------------------------------------------
-# Descrição
-# ---------
-# Salva as rotas retornadas pelo VRP_heuristic em um arquivo JSON
-# com as coordenadas de cada segmento para visualização.
-#
-# Parâmetros
-# ----------
-# routes       : list[tuple(int, list[Edge])] - saída do VRP_heuristic
-# graph        : RoadGraph - grafo com informações de nós
-# output_file  : str - caminho do arquivo JSON de saída
-#
-# Retorno
-# -------
-# None
 def save_routes_to_json(routes: list[tuple[int, list["Edge"]]], 
                         graph: "RoadGraph", 
-                        output_file: str) -> None:
-    """
-    Converte rotas (com arestas) em coordenadas para JSON.
-    Formato: {
-        "routes": [
-            {
-                "vehicle_id": 1,
-                "segments": [
-                    {
-                        "from": [lat, lon],
-                        "to": [lat, lon],
-                        "distance_m": 150.5,
-                        "highway": "residential"
-                    },
-                    ...
-                ]
-            }
-        ]
-    }
-    """
+                        output_file: str,
+                        # Para pathfinding, o nó inicial é conhecido
+                        initial_source_node_id: Optional[int] = None) -> None:
     routes_data = {"routes": []}
     
     for vehicle_id, edges in routes:
-        segments = []
+        if not edges: continue
         
-        for edge in edges:
-            # Encontrar nó de origem (procura em todas as arestas para achar quem tem este destino)
-            # Estratégia: usar o nó anterior na sequência
-            from_node_id = None
-            
-            # Busca no grafo pelo nó que tem esta aresta como saída
-            for node_id, outgoing in graph.adj.items():
-                for outgoing_edge in outgoing:
-                    if (outgoing_edge.v == edge.v and 
-                        outgoing_edge.w == edge.w and 
-                        outgoing_edge.tag == edge.tag):
-                        from_node_id = node_id
-                        break
-                if from_node_id:
+        from_node_id = initial_source_node_id
+        if from_node_id is None:
+            # Lógica para VRP: Encontra o nó de origem da primeira aresta
+            first_edge = edges[0]
+            found = False
+            for node_id, outgoing_edges in graph.adj.items():
+                if first_edge in outgoing_edges:
+                    from_node_id = node_id
+                    found = True
                     break
+            if not found: continue
+        
+        segments = []
+        current_node_id = from_node_id
+        for edge in edges:
+            if current_node_id not in graph.nodes or edge.v not in graph.nodes:
+                continue
+            from_lat, from_lon = graph.nodes[current_node_id]
+            to_lat, to_lon = graph.nodes[edge.v]
             
-            if from_node_id and from_node_id in graph.nodes and edge.v in graph.nodes:
-                from_lat, from_lon = graph.nodes[from_node_id]
-                to_lat, to_lon = graph.nodes[edge.v]
-                
-                segment = {
-                    "from": [float(from_lat), float(from_lon)],
-                    "to": [float(to_lat), float(to_lon)],
-                    "distance_m": float(edge.w),
-                    "highway": edge.tag,
-                    "name": edge.name
-                }
-                segments.append(segment)
+            segment = {
+                "from": [float(from_lat), float(from_lon)],
+                "to": [float(to_lat), float(to_lon)],
+                "distance_m": float(edge.w),
+                "highway": edge.tag,
+                "name": edge.name
+            }
+            segments.append(segment)
+            current_node_id = edge.v
         
         route_info = {
             "vehicle_id": int(vehicle_id),
@@ -1626,6 +1352,17 @@ def save_routes_to_json(routes: list[tuple[int, list["Edge"]]],
     
     with open(output_file, 'w', encoding='utf-8') as f:
         json.dump(routes_data, f, indent=2, ensure_ascii=False)
+
+
+# -------------------------------------------------------------------------
+# Função: save_single_path_to_json (Wrapper para Dijkstra/A*)
+# -------------------------------------------------------------------------
+def save_single_path_to_json(routes: list[tuple[int, list["Edge"]]], 
+                            graph: "RoadGraph", 
+                            output_file: str,
+                            source_node_id: int) -> None:
+    save_routes_to_json(routes, graph, output_file, initial_source_node_id=source_node_id)
+
 
 # -------------------------------------------------------------------------
 # Função: load_routes_from_json
@@ -1702,29 +1439,41 @@ if __name__ == "__main__":
         f"  python {prog} node_to_xy_dist <out_nodes_path> <out_edges_path> <x1> <y1> <node_id>\n"
     )
     start_time = time.time()
-    if len(sys.argv) == 4 and sys.argv[1] == "stats":
-        _, _, nodes_csv, edges_csv = sys.argv
-        cli_stats(nodes_csv, edges_csv)
-    elif len(sys.argv) == 7 and sys.argv[1] == "nearest":
-        _, _, nodes_csv, edges_csv, lat, lon = sys.argv[:6]
-        cli_nearest(nodes_csv, edges_csv, float(lat), float(lon), sys.argv[6])
-    elif len(sys.argv) == 9 and sys.argv[1] == "dijkstra":
-        _, _, nodes_csv, edges_csv, lat1, lon1, lat2, lon2 = sys.argv[:8]
-        cli_dijkstra(nodes_csv, edges_csv, float(lat1), float(lon1), float(lat2), float(lon2), sys.argv[8])
-    elif len(sys.argv) == 9 and sys.argv[1] == "astar":
-        _, _, nodes_csv, edges_csv, lat1, lon1, lat2, lon2 = sys.argv[:8]
-        cli_astar(nodes_csv, edges_csv, float(lat1), float(lon1), float(lat2), float(lon2), sys.argv[8])
-    elif len(sys.argv) == 9 and sys.argv[1] == "astar_time":
-        _, _, nodes_csv, edges_csv, lat1, lon1, lat2, lon2 = sys.argv[:8]
-        cli_astar_time(nodes_csv, edges_csv, float(lat1), float(lon1), float(lat2), float(lon2), sys.argv[8])
-    elif len(sys.argv) == 7 and sys.argv[1] == "vrp":
-        _, _, nodes_csv, edges_csv, input_txt, start_hhmm = sys.argv[:6]
-        cli_vrp(nodes_csv, edges_csv, input_txt, start_hhmm, sys.argv[6])
-    elif len(sys.argv) == 7 and sys.argv[1] == "node_to_xy_dist":
-        _, _, nodes_csv, edges_csv, x1, y1 = sys.argv[:6]
-        node_id = int(sys.argv[6])
-        cli_node_to_xy_dist(nodes_csv, edges_csv, float(x1), float(y1), node_id)
-    else:
+    if len(sys.argv) < 2:
         print(usage, end="")
+        sys.exit(1)
+        
+    command = sys.argv[1]
+
+    try:
+        if command == "stats" and len(sys.argv) == 4:
+            _, _, nodes_csv, edges_csv = sys.argv
+            cli_stats(nodes_csv, edges_csv)
+        elif command == "nearest" and len(sys.argv) == 7:
+            _, _, nodes_csv, edges_csv, lat, lon, transport = sys.argv
+            cli_nearest(nodes_csv, edges_csv, float(lat), float(lon), transport)
+        elif command == "dijkstra" and len(sys.argv) == 9:
+            _, _, nodes_csv, edges_csv, lat1, lon1, lat2, lon2, transport = sys.argv
+            cli_dijkstra(nodes_csv, edges_csv, float(lat1), float(lon1), float(lat2), float(lon2), transport)
+        elif command == "astar" and len(sys.argv) == 9:
+            _, _, nodes_csv, edges_csv, lat1, lon1, lat2, lon2, transport = sys.argv
+            cli_astar(nodes_csv, edges_csv, float(lat1), float(lon1), float(lat2), float(lon2), transport)
+        elif command == "astar_time" and len(sys.argv) == 9:
+            _, _, nodes_csv, edges_csv, lat1, lon1, lat2, lon2, transport = sys.argv
+            cli_astar_time(nodes_csv, edges_csv, float(lat1), float(lon1), float(lat2), float(lon2), transport)
+        elif command == "vrp" and len(sys.argv) == 7:
+            _, _, nodes_csv, edges_csv, input_txt, start_hhmm, transport = sys.argv
+            cli_vrp(nodes_csv, edges_csv, input_txt, start_hhmm, transport)
+        elif command == "node_to_xy_dist" and len(sys.argv) == 7:
+            _, _, nodes_csv, edges_csv, x1, y1, node_id_str = sys.argv
+            cli_node_to_xy_dist(nodes_csv, edges_csv, float(x1), float(y1), int(node_id_str))
+        else:
+            print(usage, end="")
+    except Exception as e:
+        print(f"Erro ao executar o comando '{command}': {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
     execution_time = time.time() - start_time
-    print("TTempo de execução total: %s segundos." % execution_time)
+    print("Tempo de execução total: %s segundos." % execution_time)

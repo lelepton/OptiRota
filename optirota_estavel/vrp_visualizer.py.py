@@ -20,12 +20,12 @@ from typing import List, Tuple, Optional
 class VRPVisualizer:
     def __init__(self, root):
         self.root = root
-        self.root.title("VRP Route Visualizer")
-        self.root.geometry("1200x800")
+        self.root.title("OptiRota Visualizer")
+        self.root.geometry("1200x950")
         
         self.osm_file = None
-        self.output_nodes_csv = None
-        self.output_edges_csv = None
+        self.output_nodes_csv = Path.cwd() / "out_nodes.csv"
+        self.output_edges_csv = Path.cwd() / "out_edges.csv"
         self.input_vrp_txt = None
         self.graph = None
         self.routes = []
@@ -35,7 +35,7 @@ class VRPVisualizer:
     def setup_ui(self):
         """Configura a interface do usuário"""
         # Frame de entrada
-        input_frame = ttk.LabelFrame(self.root, text="Configuração de Entrada", padding=10)
+        input_frame = ttk.LabelFrame(self.root, text="Configuração de Entrada e Saída", padding=10)
         input_frame.pack(fill=tk.X, padx=10, pady=5)
         
         # Seleção de arquivo OSM
@@ -55,45 +55,63 @@ class VRPVisualizer:
                   command=self.select_vrp_input_file).grid(row=1, column=2, padx=5)
         
         # Diretório de saída
-        ttk.Label(input_frame, text="Diretório de Saída:").grid(row=2, column=0, sticky=tk.W)
+        ttk.Label(input_frame, text="Diretório de Saída (CSVs):").grid(row=2, column=0, sticky=tk.W)
         self.output_label = ttk.Label(input_frame, text=str(Path.cwd()), foreground="blue")
         self.output_label.grid(row=2, column=1, sticky=tk.W, padx=5)
         ttk.Button(input_frame, text="Mudar", 
                   command=self.select_output_dir).grid(row=2, column=2, padx=5)
         
-        # Frame de parâmetros
-        params_frame = ttk.LabelFrame(self.root, text="Parâmetros VRP", padding=10)
+        # Frame de parâmetros globais
+        params_frame = ttk.LabelFrame(self.root, text="Parâmetros Globais", padding=10)
         params_frame.pack(fill=tk.X, padx=10, pady=5)
-        
-        # Horário de início
-        ttk.Label(params_frame, text="Hora de Início (HH:MM):").grid(row=0, column=0, sticky=tk.W)
-        self.start_time_var = tk.StringVar(value="08:00")
-        ttk.Entry(params_frame, textvariable=self.start_time_var, width=10).grid(row=0, column=1, 
-                                                                                  sticky=tk.W, padx=5)
-        
-        # Modo de transporte
-        ttk.Label(params_frame, text="Modo de Transporte:").grid(row=0, column=2, sticky=tk.W)
+
+        ttk.Label(params_frame, text="Modo de Transporte:").grid(row=0, column=0, sticky=tk.W)
         self.transport_var = tk.StringVar(value="car")
-        ttk.Combobox(params_frame, textvariable=self.transport_var, 
-                    values=["car", "bike", "foot"], state="readonly", width=8).grid(row=0, column=3, 
-                                                                                      sticky=tk.W, padx=5)
+        self.transport_combobox = ttk.Combobox(params_frame, textvariable=self.transport_var, 
+                    values=["car", "bike", "foot"], state="readonly", width=10)
+        self.transport_combobox.grid(row=0, column=1, sticky=tk.W, padx=5)
+
+        # --- NOVA SEÇÃO: PATHFINDING (PONTO A PONTO) ---
+        path_frame = ttk.LabelFrame(self.root, text="Pathfinding (Ponto a Ponto)", padding=10)
+        path_frame.pack(fill=tk.X, padx=10, pady=10)
+
+        ttk.Label(path_frame, text="Partida (lat,lon):").grid(row=0, column=0, sticky=tk.W, pady=2)
+        self.start_coord_var = tk.StringVar(value="-9.6481,-35.7174")
+        ttk.Entry(path_frame, textvariable=self.start_coord_var, width=25).grid(row=0, column=1, sticky=tk.W)
+
+        ttk.Label(path_frame, text="Chegada (lat,lon):").grid(row=1, column=0, sticky=tk.W, pady=2)
+        self.end_coord_var = tk.StringVar(value="-9.6653,-35.7354")
+        ttk.Entry(path_frame, textvariable=self.end_coord_var, width=25).grid(row=1, column=1, sticky=tk.W)
+
+        ttk.Label(path_frame, text="Algoritmo:").grid(row=0, column=2, sticky=tk.W, padx=(10,0))
+        self.algo_var = tk.StringVar(value="A* (Tempo)")
+        self.algo_combobox = ttk.Combobox(path_frame, textvariable=self.algo_var,
+                                          values=["Dijkstra", "A* (Distância)", "A* (Tempo)"],
+                                          state="readonly", width=15)
+        self.algo_combobox.grid(row=0, column=3, sticky=tk.W)
+
+        ttk.Button(path_frame, text="Calcular e Visualizar Rota", 
+                   command=self.run_pathfinding).grid(row=1, column=2, columnspan=2, padx=10, sticky=tk.E)
+
+
+        # --- SEÇÃO VRP ---
+        vrp_params_frame = ttk.LabelFrame(self.root, text="Parâmetros VRP", padding=10)
+        vrp_params_frame.pack(fill=tk.X, padx=10, pady=5)
         
-        # Número de veículos
-        ttk.Label(params_frame, text="Número de Veículos:").grid(row=1, column=0, sticky=tk.W)
-        self.num_vehicles_var = tk.StringVar(value="1")
-        ttk.Spinbox(params_frame, from_=1, to=10, textvariable=self.num_vehicles_var, 
-                   width=5).grid(row=1, column=1, sticky=tk.W, padx=5)
+        ttk.Label(vrp_params_frame, text="Hora de Início (HH:MM):").grid(row=0, column=0, sticky=tk.W)
+        self.start_time_var = tk.StringVar(value="08:00")
+        ttk.Entry(vrp_params_frame, textvariable=self.start_time_var, width=10).grid(row=0, column=1, sticky=tk.W, padx=5)
         
         # Frame de controle
         control_frame = ttk.Frame(self.root, padding=10)
         control_frame.pack(fill=tk.X, padx=10, pady=5)
         
-        ttk.Button(control_frame, text="Processar OSM → CSV", 
+        ttk.Button(control_frame, text="1. Processar OSM → CSV", 
                   command=self.process_osm).pack(side=tk.LEFT, padx=5)
-        ttk.Button(control_frame, text="Executar VRP", 
+        ttk.Button(control_frame, text="2. Executar VRP", 
                   command=self.run_vrp).pack(side=tk.LEFT, padx=5)
-        ttk.Button(control_frame, text="Visualizar Rotas", 
-                  command=self.visualize_routes).pack(side=tk.LEFT, padx=5)
+        ttk.Button(control_frame, text="3. Visualizar Rotas VRP", 
+                  command=self.visualize_vrp_routes).pack(side=tk.LEFT, padx=5)
         
         self.progress_var = tk.DoubleVar()
         progress = ttk.Progressbar(control_frame, variable=self.progress_var, maximum=100)
@@ -148,34 +166,38 @@ class VRPVisualizer:
             messagebox.showerror("Erro", "Selecione um arquivo OSM válido")
             return
         
-        if not self.output_nodes_csv:
-            output_dir = Path.cwd()
-            self.output_nodes_csv = output_dir / "out_nodes.csv"
-            self.output_edges_csv = output_dir / "out_edges.csv"
-        
-        self.log_message("Processando OSM...")
+        self.log_message("\nProcessando OSM para CSV...")
         
         def process():
             try:
                 import subprocess
-                # Chamar parser.py
-                result = subprocess.run([
-                    sys.executable, "parser.py",
+                # Tenta localizar o script parser.py
+                parser_script = Path(__file__).parent / "parser.py"
+                if not parser_script.exists():
+                    self.log_message(f"✗ Erro: 'parser.py' não encontrado no diretório do script.")
+                    return
+
+                # Monta os argumentos para chamar o script 'parser_api.py' ou 'parser.py'
+                # Neste contexto, vamos assumir que o usuário selecionou um .osm local
+                cmd = [
+                    sys.executable, str(parser_script),
                     "--in", str(self.osm_file),
                     "--nodes", str(self.output_nodes_csv),
                     "--edges", str(self.output_edges_csv)
-                ], capture_output=True, text=True, timeout=300)
+                ]
+                
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
                 
                 if result.returncode == 0:
                     self.log_message("✓ OSM processado com sucesso!")
                     self.log_message(f"  Nodes: {self.output_nodes_csv}")
                     self.log_message(f"  Edges: {self.output_edges_csv}")
-                    self.progress_var.set(50)
+                    self.progress_var.set(25)
                 else:
-                    self.log_message(f"✗ Erro ao processar: {result.stderr}")
+                    self.log_message(f"✗ Erro ao processar OSM: {result.stderr}")
                     self.progress_var.set(0)
             except Exception as e:
-                self.log_message(f"✗ Exceção: {str(e)}")
+                self.log_message(f"✗ Exceção ao processar OSM: {str(e)}")
                 self.progress_var.set(0)
         
         thread = threading.Thread(target=process, daemon=True)
@@ -187,28 +209,35 @@ class VRPVisualizer:
             messagebox.showerror("Erro", "Selecione um arquivo VRP válido")
             return
         
-        if not self.output_nodes_csv or not self.output_edges_csv:
-            messagebox.showerror("Erro", "Processe o OSM primeiro")
+        if not self.output_nodes_csv.exists() or not self.output_edges_csv.exists():
+            messagebox.showerror("Erro", "Arquivos CSV de nós/arestas não encontrados. Processe o OSM primeiro.")
             return
         
         start_time = self.start_time_var.get()
         transport = self.transport_var.get()
         
         self.log_message(f"\nExecutando VRP...")
-        self.log_message(f"  Hora: {start_time}")
+        self.log_message(f"  Hora de Início: {start_time}")
         self.log_message(f"  Transporte: {transport}")
         
         def execute():
             try:
                 import subprocess
-                result = subprocess.run([
-                    sys.executable, "optirota.py", "vrp",
+                optirota_script = Path(__file__).parent / "optirota.py"
+                if not optirota_script.exists():
+                     self.log_message(f"✗ Erro: 'optirota.py' não encontrado.")
+                     return
+
+                cmd = [
+                    sys.executable, str(optirota_script), "vrp",
                     str(self.output_nodes_csv),
                     str(self.output_edges_csv),
                     str(self.input_vrp_txt),
                     start_time,
                     transport
-                ], capture_output=True, text=True, timeout=600)
+                ]
+                
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
                 
                 if result.returncode == 0:
                     self.log_message("✓ VRP executado com sucesso!")
@@ -218,30 +247,163 @@ class VRPVisualizer:
                                 self.log_message(f"  {line}")
                     self.progress_var.set(100)
                 else:
-                    self.log_message(f"✗ Erro: {result.stderr}")
+                    self.log_message(f"✗ Erro na execução do VRP: {result.stderr}")
+                    if result.stdout: self.log_message(f"  Saída: {result.stdout}")
                     self.progress_var.set(0)
             except Exception as e:
-                self.log_message(f"✗ Exceção: {str(e)}")
+                self.log_message(f"✗ Exceção ao executar VRP: {str(e)}")
                 self.progress_var.set(0)
         
         thread = threading.Thread(target=execute, daemon=True)
         thread.start()
     
-    def visualize_routes(self):
-        """Abre janela de visualização das rotas REAIS com Folium"""
+    def run_pathfinding(self):
+        """Executa um algoritmo de pathfinding (Dijkstra/A*) e visualiza."""
+        if not self.output_nodes_csv.exists() or not self.output_edges_csv.exists():
+            messagebox.showerror("Erro", "Arquivos CSV de nós/arestas não encontrados.\nExecute '1. Processar OSM → CSV' primeiro.")
+            return
+
+        try:
+            lat1, lon1 = map(float, self.start_coord_var.get().split(','))
+            lat2, lon2 = map(float, self.end_coord_var.get().split(','))
+        except (ValueError, IndexError):
+            messagebox.showerror("Erro de Formato", "Coordenadas devem estar no formato 'latitude,longitude'.")
+            return
+            
+        algo_map = {
+            "Dijkstra": "dijkstra",
+            "A* (Distância)": "astar",
+            "A* (Tempo)": "astar_time"
+        }
+        algorithm = algo_map[self.algo_var.get()]
+        transport = self.transport_var.get()
+
+        self.log_message(f"\nCalculando rota com {self.algo_var.get()}...")
+        self.log_message(f"  De: ({lat1}, {lon1}) Para: ({lat2}, {lon2})")
+        self.log_message(f"  Modo: {transport}")
+
+        def execute():
+            try:
+                import subprocess
+                optirota_script = Path(__file__).parent / "optirota.py"
+                if not optirota_script.exists():
+                    self.log_message(f"✗ Erro: 'optirota.py' não encontrado.")
+                    return
+
+                # Modificar optirota.py para salvar a rota em JSON
+                # e chamar a visualização aqui.
+                cmd = [
+                    sys.executable, str(optirota_script), algorithm,
+                    str(self.output_nodes_csv), str(self.output_edges_csv),
+                    str(lat1), str(lon1), str(lat2), str(lon2), transport
+                ]
+                
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+
+                if result.returncode == 0:
+                    self.log_message("✓ Rota calculada com sucesso!")
+                    if result.stdout:
+                         for line in result.stdout.split("\n"):
+                            if line.strip(): self.log_message(f"  {line}")
+                    
+                    # Chamar visualização do path
+                    self.visualize_single_path((lat1, lon1), (lat2, lon2))
+                else:
+                    self.log_message(f"✗ Erro no cálculo da rota: {result.stderr}")
+                    if result.stdout: self.log_message(f"  Saída: {result.stdout}")
+
+            except Exception as e:
+                self.log_message(f"✗ Exceção no cálculo da rota: {str(e)}")
+
+        thread = threading.Thread(target=execute, daemon=True)
+        thread.start()
+        
+    def visualize_single_path(self, start_coords, end_coords):
+        """Abre uma janela de visualização para uma única rota."""
+        # O arquivo JSON é gerado pelo script optirota.py modificado
+        output_dir = self.output_nodes_csv.parent
+        path_json_file = output_dir / "path_route.json"
+
+        if not path_json_file.exists():
+            messagebox.showerror("Erro", f"Arquivo de rota não encontrado: {path_json_file}\nVerifique o log para erros no cálculo.")
+            return
+            
+        self.log_message("\nGerando mapa com rota ponto a ponto...")
+
+        def generate_map():
+            try:
+                import folium
+                import json
+                import tempfile
+                import webbrowser
+                import os
+                
+                with open(path_json_file, 'r', encoding='utf-8') as f:
+                    path_data = json.load(f)
+
+                if not path_data.get("routes"):
+                    self.log_message("✗ Rota vazia ou não encontrada no arquivo JSON.")
+                    messagebox.showinfo("Informação", "Não foi possível encontrar um caminho entre os pontos.")
+                    return
+
+                route_info = path_data["routes"][0]
+                segments = route_info.get("segments", [])
+                
+                if not segments:
+                    self.log_message("✗ Rota sem segmentos.")
+                    messagebox.showinfo("Informação", "Não foi possível encontrar um caminho entre os pontos.")
+                    return
+
+                # Centralizar mapa
+                map_center = start_coords
+                m = folium.Map(location=map_center, zoom_start=15, tiles='OpenStreetMap')
+
+                # Marcadores
+                folium.Marker(location=start_coords, popup="<b>Partida</b>", icon=folium.Icon(color='green', icon='play', prefix='fa')).add_to(m)
+                folium.Marker(location=end_coords, popup="<b>Chegada</b>", icon=folium.Icon(color='red', icon='stop', prefix='fa')).add_to(m)
+
+                # Desenhar rota
+                coordinates = [segments[0]["from"]] + [s["to"] for s in segments]
+                folium.PolyLine(
+                    locations=coordinates, color='#0000FF', weight=4, opacity=0.8,
+                    tooltip=f"Distância: {route_info['total_distance_m']:.1f}m"
+                ).add_to(m)
+
+                # Salvar e abrir
+                temp_dir = Path(tempfile.gettempdir())
+                map_file = temp_dir / "path_visualization.html"
+                m.save(str(map_file))
+                
+                webbrowser.open('file://' + os.path.realpath(str(map_file)))
+                
+                self.log_message(f"✓ Mapa da rota gerado!")
+                self.log_message(f"  Arquivo: {map_file}")
+                self.log_message(f"  Distância Total: {route_info['total_distance_m']:.1f}m")
+
+            except Exception as e:
+                self.log_message(f"✗ Erro ao gerar mapa da rota: {str(e)}")
+                import traceback
+                self.log_message(traceback.format_exc())
+                messagebox.showerror("Erro", f"Erro ao gerar mapa: {str(e)}")
+
+        # A geração do mapa pode ser rápida, mas mantemos em thread por consistência
+        thread = threading.Thread(target=generate_map, daemon=True)
+        thread.start()
+
+    def visualize_vrp_routes(self):
+        """Abre janela de visualização das rotas VRP com Folium"""
         if not self.input_vrp_txt or not self.input_vrp_txt.exists():
             messagebox.showerror("Erro", "Arquivo VRP não selecionado")
             return
         
-        # Procura pelo arquivo de rotas JSON
         routes_json = self.input_vrp_txt.parent / "vrp_routes.json"
         if not routes_json.exists():
             messagebox.showerror("Erro", 
-                "Arquivo de rotas não encontrado. Execute 'Executar VRP' primeiro.\n"
+                "Arquivo de rotas VRP não encontrado. Execute '2. Executar VRP' primeiro.\n"
                 f"Esperado: {routes_json}")
             return
         
-        self.log_message("\nGerando mapa com rotas reais...")
+        self.log_message("\nGerando mapa com rotas VRP...")
         
         def generate_map():
             try:
@@ -251,101 +413,52 @@ class VRPVisualizer:
                 import webbrowser
                 import os
                 
-                # Parse arquivo VRP
                 with open(self.input_vrp_txt, 'r', encoding='utf-8') as f:
-                    vrp_lines = [l.strip() for l in f if l.strip()]
+                    vrp_lines = [l.strip() for l in f if l.strip() and not l.strip().startswith('#')]
                 
                 depot_parts = vrp_lines[0].replace(',', ' ').split()
                 depot_lat, depot_lon = float(depot_parts[0]), float(depot_parts[1])
                 
-                # Carregar rotas
                 with open(routes_json, 'r', encoding='utf-8') as f:
                     routes_data = json.load(f)
                 
-                # Cores para cada veículo
-                cores = [
-                    '#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', 
-                    '#00FFFF', '#FFA500', '#800080', '#FFC0CB', '#A52A2A',
-                    '#008000', '#000080', '#008080', '#800080', '#FFD700'
-                ]
+                cores = ['#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#911eb4', '#46f0f0', '#f032e6', '#bcf60c', '#fabebe', '#008080', '#e6beff', '#9a6324', '#fffac8', '#800000']
                 
-                # Criar mapa
-                m = folium.Map(
-                    location=[depot_lat, depot_lon],
-                    zoom_start=14,
-                    tiles='OpenStreetMap'
-                )
+                m = folium.Map(location=[depot_lat, depot_lon], zoom_start=14, tiles='OpenStreetMap')
                 
-                # Marcador do depósito
                 folium.Marker(
                     location=[depot_lat, depot_lon],
-                    popup=f"<b>DEPÓSITO</b><br>Lat: {depot_lat:.6f}<br>Lon: {depot_lon:.6f}",
+                    popup="<b>DEPÓSITO</b>",
                     tooltip="Depósito/Distribuição",
-                    icon=folium.Icon(color='red', icon='warehouse', prefix='fa')
+                    icon=folium.Icon(color='black', icon='warehouse', prefix='fa')
                 ).add_to(m)
                 
-                # Desenhar rotas
+                all_points = set()
+
                 for route in routes_data.get("routes", []):
                     vehicle_id = route["vehicle_id"]
                     cor = cores[(vehicle_id - 1) % len(cores)]
                     segments = route.get("segments", [])
                     
-                    # Construir polilinha da rota
                     if segments:
-                        coordinates = []
-                        # Adicionar ponto de partida (depósito)
-                        coordinates.append([depot_lat, depot_lon])
+                        coordinates = [segments[0]["from"]] + [s["to"] for s in segments]
                         
-                        # Adicionar todos os pontos intermediários
-                        for segment in segments:
-                            from_point = segment["from"]
-                            to_point = segment["to"]
-                            coordinates.append(from_point)
-                            coordinates.append(to_point)
-                        
-                        # Desenhar a rota do veículo
                         folium.PolyLine(
-                            locations=coordinates,
-                            color=cor,
-                            weight=3,
-                            opacity=0.8,
-                            popup=f"Veículo {vehicle_id}",
-                            tooltip=f"Rota Veículo {vehicle_id} - {route['total_distance_m']:.1f}m"
+                            locations=coordinates, color=cor, weight=3, opacity=0.8,
+                            tooltip=f"Rota Veículo {vehicle_id}"
                         ).add_to(m)
-                        
-                        # Marcador de início/fim de rota
-                        if coordinates:
-                            folium.CircleMarker(
-                                location=coordinates[-1],
-                                radius=5,
-                                popup=f"Fim rota veículo {vehicle_id}",
-                                color=cor,
-                                fill=True,
-                                fillColor=cor,
-                                fillOpacity=0.7,
-                                weight=2
-                            ).add_to(m)
-                
-                # Adicionar legenda
-                legend_html = f'''
-                <div style="position: fixed; 
-                     bottom: 50px; right: 50px; width: 250px; height: auto;
-                     background-color: white; border:2px solid grey; z-index:9999; 
-                     font-size:12px; padding: 10px; border-radius: 5px;
-                     max-height: 400px; overflow-y: auto;">
-                    <p style="margin: 0; font-weight: bold; margin-bottom: 10px;">Legenda</p>
-                    <p><i class="fa fa-warehouse" style="color:red; margin-right: 5px;"></i> Depósito</p>
-                '''
-                
-                for route in routes_data.get("routes", []):
-                    vehicle_id = route["vehicle_id"]
-                    cor = cores[(vehicle_id - 1) % len(cores)]
-                    dist = route.get("total_distance_m", 0)
-                    legend_html += f'<p style="margin: 5px 0;"><span style="display:inline-block; width:20px; height:3px; background-color:{cor}; margin-right: 5px;"></span> Veículo {vehicle_id} ({dist:.0f}m)</p>'
-                
-                legend_html += '</div>'
-                m.get_root().html.add_child(folium.Element(legend_html))
-                
+
+                        # Adicionar marcadores de entrega (destinos únicos)
+                        for seg in segments:
+                             point_to = tuple(seg["to"])
+                             if point_to not in all_points:
+                                 folium.CircleMarker(
+                                     location=point_to, radius=5, color=cor, fill=True,
+                                     fillColor=cor, fillOpacity=0.7,
+                                     tooltip=f"Entrega Veículo {vehicle_id}"
+                                 ).add_to(m)
+                                 all_points.add(point_to)
+
                 # Salvar e abrir
                 temp_dir = Path(tempfile.gettempdir())
                 map_file = temp_dir / "vrp_rotas_reais.html"
@@ -353,15 +466,11 @@ class VRPVisualizer:
                 
                 webbrowser.open('file://' + os.path.realpath(str(map_file)))
                 
-                self.log_message(f"✓ Mapa com rotas reais gerado!")
+                self.log_message(f"✓ Mapa com rotas VRP gerado!")
                 self.log_message(f"  Arquivo: {map_file}")
-                total_rotas = len(routes_data.get("routes", []))
-                self.log_message(f"  Total de rotas: {total_rotas}")
-                for route in routes_data.get("routes", []):
-                    self.log_message(f"    Veículo {route['vehicle_id']}: {route['total_distance_m']:.1f}m")
                 
             except Exception as e:
-                self.log_message(f"✗ Erro ao gerar mapa: {str(e)}")
+                self.log_message(f"✗ Erro ao gerar mapa VRP: {str(e)}")
                 import traceback
                 self.log_message(traceback.format_exc())
                 messagebox.showerror("Erro", f"Erro ao gerar mapa: {str(e)}")
