@@ -1,4 +1,9 @@
-Este repositório reúne quatro utilitários CLI para **gerar grafos a partir do OSM**, **baixar recortes via Overpass**, **fazer rotas/VRP** e **criar casos de teste**.
+## Definição
+
+O OptiRota é um sofisticado sistema de otimização de rotas. Sua implementação foi feita em multicamadas, começando pela análise de dados geoespaciais do mundo real, e se estendendo para a construção de um grafo navegável, a implementação e análise de algoritmos de busca fundamentais (Dijikstra e A*) e, finalmente, a aplicação da heurística para resolver uma versão com restrições do Problema de Roteamento de Veículos (VRP).
+
+
+Este repositório reúne quatro utilitários CLI do OptiRota para **gerar grafos a partir do OSM**, **baixar recortes via Overpass**, **fazer rotas/VRP** e **criar casos de teste**.
 
 - `parser.py` — converte **.osm** local → `nodes`/`edges`
 - `parser_api.py` — baixa via **Overpass API** um círculo (centro+raio) → `nodes`/`edges`
