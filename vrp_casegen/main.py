@@ -24,11 +24,11 @@ import argparse
 import random
 from pathlib import Path
 from typing import List, Tuple
-from generate_capacities import generate_capacities
-from generate_weights import generate_weights
-from random_point_in_circle import random_point_in_circle
-from build_windows_string import build_windows_string
-from write_vrp_file import write_vrp_file
+from .generate_capacities import generate_capacities
+from .generate_weights import generate_weights
+from .random_point_in_circle import random_point_in_circle
+from .build_windows_string import build_windows_string
+from .write_vrp_file import write_vrp_file
 
 def main(argv: list[str] | None = None) -> int:
     '''

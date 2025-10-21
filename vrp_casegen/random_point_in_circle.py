@@ -1,8 +1,8 @@
 import math
 import random
 from typing import Tuple
-from constante import EARTH_RADIUS_M
-from _clamp_lon import _clamp_lon
+from .constante import EARTH_RADIUS_M
+from ._clamp_lon import _clamp_lon
 
 def random_point_in_circle(lat0: float, lon0: float, radius_m: float) -> Tuple[float, float]:
     '''

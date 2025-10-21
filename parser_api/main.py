@@ -24,10 +24,10 @@ import logging
 import tempfile
 from typing import List
 from pathlib import Path
-from _build_arg_parser import _build_arg_parser
-from _parse_center import _parse_center
-from download_osm_with_overpass import download_osm_with_overpass
-from process_osm_to_csv import process_osm_to_csv
+from ._build_arg_parser import _build_arg_parser
+from ._parse_center import _parse_center
+from .download_osm_with_overpass import download_osm_with_overpass
+from .process_osm_to_csv import process_osm_to_csv
 
 def main(argv: List[str] | None = None) -> int:
     '''

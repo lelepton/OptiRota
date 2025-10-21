@@ -1,5 +1,5 @@
-from funcoes_utilitarias._normalize_tag import _normalize_tag
 from constantes.constantes import SPEED_LIMITS_MPS
+from ._normalize_tag import _normalize_tag
 
 def _speed_mps_for_tag(tag: str) -> float:
     '''

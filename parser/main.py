@@ -36,8 +36,8 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 from typing import List
-from _build_arg_parser import _build_arg_parser
-from process_osm_to_csv import process_osm_to_csv
+from ._build_arg_parser import _build_arg_parser
+from .process_osm_to_csv import process_osm_to_csv
 
 def main(argv: List[str] | None = None) -> int:
     parser = _build_arg_parser()

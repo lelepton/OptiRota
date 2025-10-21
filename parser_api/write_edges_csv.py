@@ -1,10 +1,10 @@
 import csv
 from pathlib import Path
 from typing import Dict, Tuple
-from iter_ways import iter_ways
-from is_relevant_way import is_relevant_way
-from dedupe_consecutive import dedupe_consecutive
-from compute_haversine_meters import compute_haversine_meters
+from .iter_ways import iter_ways
+from .is_relevant_way import is_relevant_way
+from .dedupe_consecutive import dedupe_consecutive
+from .compute_haversine_meters import compute_haversine_meters
 
 def write_edges_csv(osm_path: Path, nodes: Dict[int, Tuple[float, float]], csv_path: Path) -> None:
     '''

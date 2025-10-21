@@ -1,5 +1,5 @@
 import random
-from _min_to_hhmm import _min_to_hhmm
+from ._min_to_hhmm import _min_to_hhmm
 
 def random_time_window(day_start_min: int, day_end_min: int, min_len_min: int, max_len_min: int) -> str:
     '''

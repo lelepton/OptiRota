@@ -1,8 +1,8 @@
 import logging
 from pathlib import Path
-from parse_nodes import parse_nodes
-from write_nodes_csv import write_nodes_csv
-from write_edges_csv import write_edges_csv
+from .parse_nodes import parse_nodes
+from .write_nodes_csv import write_nodes_csv
+from .write_edges_csv import write_edges_csv
 
 def process_osm_to_csv(osm_path: Path, nodes_csv: Path, edges_csv: Path) -> None:
     '''

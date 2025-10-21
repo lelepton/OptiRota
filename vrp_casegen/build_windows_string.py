@@ -1,6 +1,6 @@
 import random
-from _hhmm_to_min import _hhmm_to_min
-from random_time_window import random_time_window
+from ._hhmm_to_min import _hhmm_to_min
+from .random_time_window import random_time_window
 
 def build_windows_string(multi_prob: float, day_start: str, day_end: str, min_len: int, max_len: int) -> str:
     '''

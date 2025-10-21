@@ -1,5 +1,5 @@
 from typing import Dict
-from constantes import DRIVE_HIGHWAYS, PEDESTRIAN_SET, CYCLE_SET
+from .constantes import DRIVE_HIGHWAYS, PEDESTRIAN_SET, CYCLE_SET
 
 def is_relevant_way(tags: Dict[str, str]) -> bool:
     '''

@@ -3,8 +3,8 @@ import urllib.request
 import logging
 import time
 from pathlib import Path
-from build_overpass_query import build_overpass_query
-from constantes import DEFAULT_OVERPASS_URL
+from .build_overpass_query import build_overpass_query
+from .constantes import DEFAULT_OVERPASS_URL
 
 def download_osm_with_overpass(
     lat: float,

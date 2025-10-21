@@ -1,5 +1,5 @@
 import argparse
-from constantes import DEFAULT_OVERPASS_URL
+from .constantes import DEFAULT_OVERPASS_URL
 
 def _build_arg_parser() -> argparse.ArgumentParser:
     '''

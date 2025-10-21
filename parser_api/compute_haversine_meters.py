@@ -1,5 +1,5 @@
 import math
-from constantes import EARTH_RADIUS_M
+from .constantes import EARTH_RADIUS_M
 
 def compute_haversine_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     '''

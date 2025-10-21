@@ -1,5 +1,5 @@
-from funcoes_utilitarias._format_seconds_hms import _format_seconds_hms
-from funcoes_utilitarias._speed_mps_for_tag import _speed_mps_for_tag
+from ._format_seconds_hms import _format_seconds_hms
+from ._speed_mps_for_tag import _speed_mps_for_tag
 
 def print_path_edges(path_edges, source_node_id: int, label_total: str) -> None:
     '''

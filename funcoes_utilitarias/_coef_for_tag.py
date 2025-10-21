@@ -1,5 +1,5 @@
-from funcoes_utilitarias._normalize_tag import _normalize_tag
 from constantes.constantes import COEF_BY_TAG
+from ._normalize_tag import _normalize_tag
 
 def _coef_for_tag(tag: str) -> float:
     '''

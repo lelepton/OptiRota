@@ -19,3 +19,4 @@ class Edge:
     allow_bike: bool
     allow_foot: bool
     name: str
+    
